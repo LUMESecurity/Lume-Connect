@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS public.organizations (
 ALTER TABLE public.organizations
     ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
 
+-- Ensure status column exists for tenant suspension tracking
+ALTER TABLE public.organizations
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+
 -- Tighten RLS on public.organizations:
 -- Block direct anon/client-side mutations and deletes; only server-side service_role
 -- bypasses RLS after verifying the Super Admin session.

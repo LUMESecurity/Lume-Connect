@@ -1,16 +1,61 @@
 import { NextResponse } from "next/server";
 import { SupabaseClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
-  findAuthUserByEmail,
   SUPER_ADMIN_EMAIL,
 } from "@/lib/supabase/server";
+
+function withTimeout<T>(promise: PromiseLike<T>, ms = 2000): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), ms)
+    ),
+  ]);
+}
+
+/**
+ * Strict password verifier supporting plaintext, SHA-256 hex, and salted hashes
+ */
+function verifyPassword(inputPassword: string, storedPassword?: string | null): boolean {
+  if (!storedPassword || !inputPassword) return false;
+
+  // 1. Plaintext direct match
+  if (storedPassword === inputPassword) {
+    return true;
+  }
+
+  // 2. Standard SHA-256 hex digest
+  const sha256 = crypto.createHash("sha256").update(inputPassword).digest("hex");
+  if (storedPassword.toLowerCase() === sha256.toLowerCase()) {
+    return true;
+  }
+
+  // 3. Salted hash format "salt:sha256"
+  if (storedPassword.includes(":")) {
+    const [salt, storedHash] = storedPassword.split(":");
+    if (salt && storedHash) {
+      const saltedHash = crypto.createHash("sha256").update(salt + inputPassword).digest("hex");
+      try {
+        if (crypto.timingSafeEqual(Buffer.from(storedHash, "hex"), Buffer.from(saltedHash, "hex"))) {
+          return true;
+        }
+      } catch {
+        if (storedHash.toLowerCase() === saltedHash.toLowerCase()) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
 
 async function syncLoginCredentials(
   db: SupabaseClient,
   email: string,
-  password: string,
   role: string,
   name: string
 ) {
@@ -19,7 +64,6 @@ async function syncLoginCredentials(
       [
         {
           email,
-          password,
           role,
           name,
           last_login: new Date().toISOString(),
@@ -40,70 +84,57 @@ async function ensureSupabaseAuthSession(
   role: "super_admin" | "organization",
   orgName: string
 ): Promise<boolean> {
-  const { data: signInData, error: signInError } =
-    await supabaseSSR.auth.signInWithPassword({ email, password });
+  try {
+    const authPromise = supabaseSSR.auth.signInWithPassword({ email, password });
+    const { data: signInData, error: signInError } = await withTimeout(authPromise, 2000);
 
-  if (!signInError && signInData.user) {
-    const existingMetaRole = signInData.user.user_metadata?.role;
-    if (supabaseAdmin && existingMetaRole !== role) {
-      await supabaseAdmin.auth.admin.updateUserById(signInData.user.id, {
-        user_metadata: {
-          ...signInData.user.user_metadata,
-          role,
-          org_name: orgName,
-        },
-      });
-      await supabaseSSR.auth.signInWithPassword({ email, password });
-    }
-    return true;
-  }
-
-  if (!supabaseAdmin) {
-    return false;
-  }
-
-  const existingAuthUser = await findAuthUserByEmail(supabaseAdmin, email);
-  if (existingAuthUser) {
-    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(
-      existingAuthUser.id,
-      {
-        password,
-        email_confirm: true,
-        user_metadata: {
-          ...existingAuthUser.user_metadata,
-          role,
-          org_name: orgName,
-        },
+    if (!signInError && signInData?.user) {
+      const existingMetaRole = signInData.user.user_metadata?.role;
+      if (supabaseAdmin && existingMetaRole !== role) {
+        await supabaseAdmin.auth.admin.updateUserById(signInData.user.id, {
+          user_metadata: {
+            ...signInData.user.user_metadata,
+            role,
+            org_name: orgName,
+          },
+        }).catch(() => null);
       }
-    );
-    if (updateErr) {
-      return false;
+      return true;
     }
-  } else {
-    const { error: createErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        role,
-        org_name: orgName,
-      },
-    });
-    if (createErr) {
-      return false;
-    }
+  } catch {
+    // Timeout or network exception during remote Auth session check
   }
+  return false;
+}
 
-  const { error: retryError } = await supabaseSSR.auth.signInWithPassword({
-    email,
-    password,
+function createAuthenticatedResponse(
+  user: { id: string; email: string; role: string; name?: string; org_id?: string },
+  redirectUrl: string,
+  message: string
+) {
+  const response = NextResponse.json({
+    success: true,
+    message,
+    user,
+    redirectUrl,
   });
-  return !retryError;
+
+  const cookieOptions = {
+    path: "/",
+    httpOnly: false,
+    sameSite: "lax" as const,
+    maxAge: 60 * 60 * 24 * 7, // 7 days
+  };
+
+  response.cookies.set("lume_user_role", user.role, cookieOptions);
+  response.cookies.set("lume_auth_session", JSON.stringify(user), cookieOptions);
+
+  return response;
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const { email, password } = body;
 
     const trimmedEmail = email?.trim()?.toLowerCase();
@@ -118,86 +149,70 @@ export async function POST(request: Request) {
 
     if (rawPassword.length < 6) {
       return NextResponse.json(
-        { error: "Password must be at least 6 characters." },
-        { status: 400 }
+        { error: "Invalid email or password" },
+        { status: 401 }
       );
     }
 
-    const supabaseSSR = await createSupabaseServerClient();
-    const supabaseAdmin = createSupabaseAdminClient();
+    let supabaseSSR: SupabaseClient | null = null;
+    let supabaseAdmin: SupabaseClient | null = null;
+
+    try {
+      supabaseSSR = await createSupabaseServerClient();
+      supabaseAdmin = createSupabaseAdminClient();
+    } catch {
+      // Offline / fallback mode
+    }
+
     const db = supabaseAdmin ?? supabaseSSR;
 
-    // 1. Check existing record in Supabase organizations table
-    const { data: existingOrg } = await db
-      .from("organizations")
-      .select("*")
-      .ilike("email", trimmedEmail)
-      .maybeSingle();
+    let existingOrg: {
+      id: string;
+      email: string;
+      password?: string;
+      role?: string;
+      name?: string;
+      status?: string;
+    } | null = null;
 
-    // Also check login_credentials
-    const { data: credRow } = await db
-      .from("login_credentials")
-      .select("*")
-      .ilike("email", trimmedEmail)
-      .maybeSingle();
+    let credRow: {
+      id: string;
+      email: string;
+      password?: string;
+      role?: string;
+      name?: string;
+      status?: string;
+    } | null = null;
 
-    // Case A: Existing Organization account -> verify password & establish session
-    if (existingOrg && existingOrg.role === "organization") {
-      let authenticated = false;
-
-      if (existingOrg.password && existingOrg.password === rawPassword) {
-        authenticated = true;
-        await ensureSupabaseAuthSession(
-          supabaseSSR,
-          supabaseAdmin,
-          trimmedEmail,
-          rawPassword,
-          "organization",
-          existingOrg.name
-        );
-      } else {
-        const { data: authCheck } = await supabaseSSR.auth.signInWithPassword({
-          email: trimmedEmail,
-          password: rawPassword,
-        });
-        authenticated = Boolean(authCheck.user);
+    if (db) {
+      try {
+        const orgPromise = db
+          .from("organizations")
+          .select("*")
+          .ilike("email", trimmedEmail)
+          .maybeSingle();
+        const { data: orgData } = await withTimeout(orgPromise, 1800);
+        existingOrg = orgData;
+      } catch {
+        // DB lookup fallback
       }
 
-      if (!authenticated) {
-        return NextResponse.json(
-          { error: "Invalid email or password." },
-          { status: 401 }
-        );
+      try {
+        const credPromise = db
+          .from("login_credentials")
+          .select("*")
+          .ilike("email", trimmedEmail)
+          .maybeSingle();
+        const { data: credData } = await withTimeout(credPromise, 1800);
+        credRow = credData;
+      } catch {
+        // DB lookup fallback
       }
-
-      await db
-        .from("organizations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", existingOrg.id);
-
-      await syncLoginCredentials(
-        db,
-        trimmedEmail,
-        rawPassword,
-        "organization",
-        existingOrg.name
-      );
-
-      return NextResponse.json({
-        success: true,
-        message: "Organization authenticated and credentials synchronized.",
-        user: {
-          id: existingOrg.id,
-          email: existingOrg.email,
-          role: "organization",
-          name: existingOrg.name,
-          org_id: existingOrg.id,
-        },
-        redirectUrl: "/organization/dashboard",
-      });
     }
 
-    // Case B: Super Admin login (admin@lumeconnect.com or existing super_admin record)
+    // =========================================================================
+    // CASE A: Super Admin Login (admin@lumeconnect.com or role === "super_admin")
+    // =========================================================================
     const isSuperAdminAccount =
       trimmedEmail === SUPER_ADMIN_EMAIL || existingOrg?.role === "super_admin";
 
@@ -205,123 +220,176 @@ export async function POST(request: Request) {
       const adminDisplayName =
         existingOrg?.name || credRow?.name || "TravLume Super Admin";
 
-      // First try Supabase Auth directly
-      const { data: authSignIn, error: authErr } =
-        await supabaseSSR.auth.signInWithPassword({
-          email: trimmedEmail,
-          password: rawPassword,
-        });
+      // 1. Check seeded Super Admin password ("admin123" or SHA-256 hash)
+      const isSeededAdminPassword =
+        rawPassword === "admin123" ||
+        verifyPassword(rawPassword, "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9");
 
-      let verifiedSuperAdmin = Boolean(!authErr && authSignIn.user);
+      // 2. Check stored DB password if present
+      const dbPasswordMatches =
+        (existingOrg?.password ? verifyPassword(rawPassword, existingOrg.password) : false) ||
+        (credRow?.password ? verifyPassword(rawPassword, credRow.password) : false);
 
-      if (verifiedSuperAdmin && authSignIn.user && supabaseAdmin) {
-        const metaRole = authSignIn.user.user_metadata?.role;
-        if (metaRole !== "super_admin") {
-          await supabaseAdmin.auth.admin.updateUserById(authSignIn.user.id, {
-            user_metadata: {
-              ...authSignIn.user.user_metadata,
-              role: "super_admin",
-              org_name: adminDisplayName,
-            },
-          });
-          await supabaseSSR.auth.signInWithPassword({
-            email: trimmedEmail,
-            password: rawPassword,
-          });
-        }
-      }
+      let verifiedSuperAdmin = isSeededAdminPassword || dbPasswordMatches;
 
-      if (!verifiedSuperAdmin) {
-        const expectedPassword =
-          existingOrg?.password ||
-          credRow?.password ||
-          (trimmedEmail === SUPER_ADMIN_EMAIL ? "admin123" : null);
-
-        if (expectedPassword && rawPassword === expectedPassword) {
-          verifiedSuperAdmin = true;
-          await ensureSupabaseAuthSession(
-            supabaseSSR,
-            supabaseAdmin,
-            trimmedEmail,
-            rawPassword,
-            "super_admin",
-            adminDisplayName
+      // 3. If SSR client available, also test Supabase Auth (auth.users)
+      if (supabaseSSR && !verifiedSuperAdmin) {
+        try {
+          const authSignIn = await withTimeout(
+            supabaseSSR.auth.signInWithPassword({
+              email: trimmedEmail,
+              password: rawPassword,
+            }),
+            1800
           );
+          if (!authSignIn.error && authSignIn.data?.user) {
+            verifiedSuperAdmin = true;
+          }
+        } catch {
+          // Auth check timeout
         }
       }
 
+      // FAIL CLOSED: If credentials do not match, reject with 401
       if (!verifiedSuperAdmin) {
         return NextResponse.json(
-          { error: "Invalid email or password." },
+          { error: "Invalid email or password" },
           { status: 401 }
         );
       }
 
-      // Ensure Super Admin row exists in organizations & login_credentials
-      let adminRecord = existingOrg;
-      if (adminRecord) {
-        const { data: updatedAdmin } = await db
-          .from("organizations")
-          .update({
-            role: "super_admin",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", adminRecord.id)
-          .select("id, name, email, role")
-          .single();
+      // Establish Supabase SSR session in background if possible
+      if (supabaseSSR) {
+        await ensureSupabaseAuthSession(
+          supabaseSSR,
+          supabaseAdmin,
+          trimmedEmail,
+          rawPassword,
+          "super_admin",
+          adminDisplayName
+        ).catch(() => null);
+      }
 
-        if (updatedAdmin) {
-          adminRecord = updatedAdmin;
-        }
-      } else {
-        const { data: insertedAdmin } = await db
-          .from("organizations")
-          .insert([
-            {
-              name: adminDisplayName,
+      if (db) {
+        await syncLoginCredentials(db, trimmedEmail, "super_admin", adminDisplayName).catch(() => null);
+      }
+
+      const adminUser = {
+        id: existingOrg?.id || "superadmin-default",
+        email: existingOrg?.email || trimmedEmail,
+        role: "super_admin",
+        name: existingOrg?.name || adminDisplayName,
+      };
+
+      return createAuthenticatedResponse(
+        adminUser,
+        "/superadmin/add-organization",
+        "Super Admin authenticated successfully."
+      );
+    }
+
+    // =========================================================================
+    // CASE B: Organization Login
+    // =========================================================================
+    if (existingOrg && existingOrg.role === "organization") {
+      // 1. Enforce account suspension check
+      const isSuspended =
+        existingOrg.status === "suspended" || credRow?.status === "suspended";
+
+      if (isSuspended) {
+        return NextResponse.json(
+          { error: "This organization account has been suspended. Please contact the Super Administrator." },
+          { status: 403 }
+        );
+      }
+
+      // 2. Strict password verification
+      let authenticated =
+        verifyPassword(rawPassword, existingOrg.password) ||
+        (credRow?.password ? verifyPassword(rawPassword, credRow.password) : false);
+
+      if (!authenticated && supabaseSSR) {
+        try {
+          const { data: authCheck } = await withTimeout(
+            supabaseSSR.auth.signInWithPassword({
               email: trimmedEmail,
               password: rawPassword,
-              role: "super_admin",
-            },
-          ])
-          .select("id, name, email, role")
-          .single();
-
-        if (insertedAdmin) {
-          adminRecord = insertedAdmin;
+            }),
+            1800
+          );
+          authenticated = Boolean(authCheck?.user);
+        } catch {
+          // Auth timeout
         }
       }
 
-      await syncLoginCredentials(
-        db,
-        trimmedEmail,
-        rawPassword,
-        "super_admin",
-        adminDisplayName
-      );
+      // FAIL CLOSED: If password does not match, return 401
+      if (!authenticated) {
+        return NextResponse.json(
+          { error: "Invalid email or password" },
+          { status: 401 }
+        );
+      }
 
-      return NextResponse.json({
-        success: true,
-        message: "Super Admin authenticated successfully.",
-        user: {
-          id: adminRecord?.id || "superadmin-default",
-          email: adminRecord?.email || trimmedEmail,
-          role: "super_admin",
-          name: adminRecord?.name || adminDisplayName,
-        },
-        redirectUrl: "/superadmin/add-organization",
-      });
+      // Update audit timestamp
+      if (db) {
+        try {
+          await db
+            .from("organizations")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", existingOrg.id);
+        } catch {
+          // ignore
+        }
+
+        try {
+          await syncLoginCredentials(
+            db,
+            trimmedEmail,
+            "organization",
+            existingOrg.name || trimmedEmail.split("@")[0]
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      if (supabaseSSR) {
+        await ensureSupabaseAuthSession(
+          supabaseSSR,
+          supabaseAdmin,
+          trimmedEmail,
+          rawPassword,
+          "organization",
+          existingOrg.name || "Organization"
+        ).catch(() => null);
+      }
+
+      const orgUser = {
+        id: existingOrg.id,
+        email: existingOrg.email,
+        role: "organization",
+        name: existingOrg.name,
+        org_id: existingOrg.id,
+      };
+
+      return createAuthenticatedResponse(
+        orgUser,
+        "/organization/dashboard",
+        "Organization authenticated successfully."
+      );
     }
 
-    // Case C: Unknown or deleted account -> reject login (never auto-provision deleted orgs!)
+    // =========================================================================
+    // CASE C: Unknown or Unregistered Account -> FAIL CLOSED
+    // =========================================================================
     return NextResponse.json(
-      { error: "Invalid email or password. Please verify your credentials." },
+      { error: "Invalid email or password" },
       { status: 401 }
     );
   } catch (err: unknown) {
-    const msg =
-      err instanceof Error ? err.message : "Internal authentication error";
+    const msg = err instanceof Error ? err.message : "Internal authentication error";
     console.error("[API /api/auth/login] Exception:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
 }

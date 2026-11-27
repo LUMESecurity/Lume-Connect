@@ -22,7 +22,8 @@ export const isSupabaseConfigured = (): boolean => {
     supabaseUrl.startsWith("https://") &&
     !supabaseUrl.includes("your-project.supabase.co") &&
     !supabaseUrl.includes("placeholder.supabase.co") &&
-    supabaseAnonKey !== "your-anon-key-here"
+    supabaseAnonKey !== "your-anon-key-here" &&
+    !supabaseAnonKey.includes("<")
   );
 };
 

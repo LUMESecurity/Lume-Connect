@@ -92,7 +92,10 @@ export default function LoginPage() {
       {/* ========================================================= */}
       {/* LEFT: Enterprise Showcase (TravLume Navy & Gold Theme)    */}
       {/* ========================================================= */}
-      <div className="relative hidden lg:flex lg:w-1/2 bg-[#242D53] text-white flex-col justify-between p-12 xl:p-16 overflow-hidden">
+      <div
+        className="relative hidden lg:flex lg:w-1/2 bg-[#242D53] text-white flex-col justify-between p-12 xl:p-16 overflow-hidden"
+        style={{ backgroundColor: "#242D53", color: "#ffffff" }}
+      >
         {/* Subtle Ambient Background Gradients */}
         <div className="absolute top-0 right-0 -mr-24 -mt-24 w-96 h-96 rounded-full bg-[#D2B68D]/15 blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 -ml-24 -mb-24 w-96 h-96 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
@@ -111,17 +114,23 @@ export default function LoginPage() {
 
         {/* Center: Value Proposition */}
         <div className="relative z-10 my-auto max-w-lg space-y-8 py-12">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#D2B68D]/20 text-[#D2B68D] border border-[#D2B68D]/30 backdrop-blur-sm">
+          <div
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#D2B68D]/20 text-[#D2B68D] border border-[#D2B68D]/30 backdrop-blur-sm"
+            style={{ backgroundColor: "rgba(210, 182, 141, 0.2)", color: "#D2B68D", borderColor: "rgba(210, 182, 141, 0.3)" }}
+          >
             <Sparkles className="w-3.5 h-3.5" />
             <span>TravLume Tech Enterprise Platform</span>
           </div>
 
-          <h1 className="text-3xl xl:text-4xl font-extrabold tracking-tight text-white leading-tight">
+          <h1
+            className="text-3xl xl:text-4xl font-extrabold tracking-tight text-white leading-tight"
+            style={{ color: "#ffffff" }}
+          >
             Role-Based Access <br />
-            <span className="text-[#D2B68D]">Enterprise Portal</span>
+            <span className="text-[#D2B68D]" style={{ color: "#D2B68D" }}>Enterprise Portal</span>
           </h1>
 
-          <p className="text-sm xl:text-base text-slate-300 leading-relaxed">
+          <p className="text-sm xl:text-base text-slate-300 leading-relaxed" style={{ color: "#cbd5e1" }}>
             Universal authenticated gateway with automatic role-based routing for
             both platform <strong>Super Administrators</strong> and onboarded <strong>Organizations</strong>.
           </p>
@@ -129,36 +138,45 @@ export default function LoginPage() {
           {/* Enterprise Capabilities */}
           <div className="space-y-4 pt-2">
             <div className="flex items-start gap-3.5">
-              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[#D2B68D] flex-shrink-0 mt-0.5">
+              <div
+                className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[#D2B68D] flex-shrink-0 mt-0.5"
+                style={{ backgroundColor: "rgba(255, 255, 255, 0.1)", color: "#D2B68D" }}
+              >
                 <Shield className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">Role-Based Access Control (RBAC)</h4>
-                <p className="text-xs text-slate-300">
+                <h4 className="text-sm font-semibold text-white" style={{ color: "#ffffff" }}>Role-Based Access Control (RBAC)</h4>
+                <p className="text-xs text-slate-300" style={{ color: "#cbd5e1" }}>
                   Super Admins manage tenant provisioning; Organizations securely access their dedicated tenant space.
                 </p>
               </div>
             </div>
 
             <div className="flex items-start gap-3.5">
-              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[#D2B68D] flex-shrink-0 mt-0.5">
+              <div
+                className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[#D2B68D] flex-shrink-0 mt-0.5"
+                style={{ backgroundColor: "rgba(255, 255, 255, 0.1)", color: "#D2B68D" }}
+              >
                 <Database className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">PostgreSQL &amp; Supabase Integration</h4>
-                <p className="text-xs text-slate-300">
+                <h4 className="text-sm font-semibold text-white" style={{ color: "#ffffff" }}>PostgreSQL &amp; Supabase Integration</h4>
+                <p className="text-xs text-slate-300" style={{ color: "#cbd5e1" }}>
                   Tenant records, credentials, and contact identities persisted directly in your Supabase schema.
                 </p>
               </div>
             </div>
 
             <div className="flex items-start gap-3.5">
-              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[#D2B68D] flex-shrink-0 mt-0.5">
+              <div
+                className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[#D2B68D] flex-shrink-0 mt-0.5"
+                style={{ backgroundColor: "rgba(255, 255, 255, 0.1)", color: "#D2B68D" }}
+              >
                 <CheckCircle2 className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">Instant Single Sign-In</h4>
-                <p className="text-xs text-slate-300">
+                <h4 className="text-sm font-semibold text-white" style={{ color: "#ffffff" }}>Instant Single Sign-In</h4>
+                <p className="text-xs text-slate-300" style={{ color: "#cbd5e1" }}>
                   Automatic role detection routes you to your authorized administrative or organization dashboard.
                 </p>
               </div>
@@ -167,7 +185,7 @@ export default function LoginPage() {
         </div>
 
         {/* Bottom: Legal / Status Footer */}
-        <div className="relative z-10 pt-6 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+        <div className="relative z-10 pt-6 border-t border-white/10 flex items-center justify-between text-xs text-slate-400" style={{ borderColor: "rgba(255, 255, 255, 0.1)", color: "#94a3b8" }}>
           <span>&copy; {new Date().getFullYear()} TravLume Tech Private Limited</span>
           <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -188,11 +206,14 @@ export default function LoginPage() {
 
           {/* Form Header */}
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold tracking-wider uppercase bg-[#242D53]/10 text-[#242D53] border border-[#242D53]/20">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#242D53]" />
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold tracking-wider uppercase bg-[#242D53]/10 text-[#242D53] border border-[#242D53]/20"
+              style={{ backgroundColor: "rgba(36, 45, 83, 0.08)", color: "#242D53", borderColor: "rgba(36, 45, 83, 0.15)" }}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-[#242D53]" style={{ color: "#242D53" }} />
               <span>Identity &amp; Access Gateway</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#242D53]">
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#242D53]" style={{ color: "#242D53" }}>
               Sign in to your account
             </h2>
             <p className="text-sm text-slate-500">
@@ -293,16 +314,17 @@ export default function LoginPage() {
                 type="submit"
                 disabled={loading}
                 className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold text-sm text-white bg-[#242D53] hover:bg-[#1B2240] active:bg-[#161C36] disabled:opacity-60 disabled:cursor-not-allowed shadow-md shadow-[#242D53]/20 hover:shadow-lg hover:shadow-[#242D53]/25 transition-all cursor-pointer group"
+                style={{ backgroundColor: "#242D53", color: "#ffffff" }}
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-[#D2B68D]" />
+                    <Loader2 className="w-4 h-4 animate-spin text-[#D2B68D]" style={{ color: "#D2B68D" }} />
                     <span>Signing in...</span>
                   </>
                 ) : (
                   <>
                     <span>Sign In</span>
-                    <ArrowRight className="w-4 h-4 text-[#D2B68D] group-hover:translate-x-0.5 transition-transform" />
+                    <ArrowRight className="w-4 h-4 text-[#D2B68D] group-hover:translate-x-0.5 transition-transform" style={{ color: "#D2B68D" }} />
                   </>
                 )}
               </button>

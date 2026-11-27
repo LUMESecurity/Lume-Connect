@@ -61,10 +61,25 @@ export async function loginUser(email: string, password: string): Promise<{
       res.status === 403 ||
       (json.error && !json.error.includes("Internal"))
     ) {
-      return { user: null, error: json.error || "Invalid credentials", redirectUrl: "" };
+      return { user: null, error: json.error || "Invalid email or password", redirectUrl: "" };
+    }
+
+    if (isSupabaseConfigured()) {
+      return {
+        user: null,
+        error: json.error || "Invalid email or password",
+        redirectUrl: "",
+      };
     }
   } catch (apiErr) {
-    console.warn("[loginUser] API login route exception, attempting client fallbacks:", apiErr);
+    console.warn("[loginUser] API login route exception:", apiErr);
+    if (isSupabaseConfigured()) {
+      return {
+        user: null,
+        error: "Unable to verify credentials with authentication server. Please try again.",
+        redirectUrl: "",
+      };
+    }
   }
 
   // 2. Direct client Supabase Auth Fallback
